@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#140c0a">
-<title>IMP – poznámky a úkoly</title>
+<title>IMP – úkoly</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -64,12 +64,25 @@
   #editor .bar { display: flex; gap: 8px; }
   #editor .bar .spacer { flex: 1; }
   [hidden] { display: none !important; }
+  .row.task { cursor: pointer; }
+  .row .meta { display: block; margin-top: 2px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line); margin-right: 6px; color: var(--dim); }
+  .badge.high { color: #ffab91; border-color: #8a3a2a; }
+  .badge.low { color: #9fb7a0; border-color: #3f5a41; }
+  .badge.proj { color: var(--gold-dim); }
+  select { font: inherit; color: var(--text); background: #0d0907; border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; min-height: 44px; width: 100%; }
+  #editor { overflow-y: auto; }
+  #editor .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  #editor label.cap { display: block; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--gold-dim); margin: 2px 0 4px; }
+  #editor textarea { flex: none; min-height: 110px; }
+  #ed-subs .row { padding-left: 8px; min-height: 44px; }
+  @media (max-width: 420px) { #editor .grid { grid-template-columns: 1fr 1fr; } #editor .grid > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; } }
 </style>
 </head>
 <body>
 <header>
   <img src="icon-192.png" alt="">
-  <h1>Poznámky a úkoly</h1>
+  <h1>Úkoly</h1>
   <div class="sync" id="sync"></div>
   <button class="icon" id="btn-refresh" title="Obnovit" aria-label="Obnovit" hidden>↻</button>
   <button class="icon" id="btn-logout" title="Odhlásit" aria-label="Odhlásit" hidden>⎋</button>
@@ -81,21 +94,18 @@
   <section id="login" hidden>
     <img src="icon-512.png" alt="">
     <h2 style="justify-content:center">Přihlášení</h2>
-    <p>Aplikace čte a zapisuje poznámky a úkoly ve složce <b>IMP Master</b> na tvém Google Disku (účet Master).</p>
+    <p>Aplikace čte a zapisuje úkoly ve složce <b>IMP sdílené</b> na Google Disku (stejné úkoly jako IMP a o-io). Vidí jen soubory této aplikace, ne zbytek Disku.</p>
     <button class="primary" id="btn-login">Přihlásit přes Google</button>
   </section>
 
   <section id="app" hidden>
-    <h2>Poznámky <button id="btn-newnote" style="min-height:36px;padding:4px 12px">+ nová</button></h2>
-    <div class="card" id="notes"></div>
-
-    <div class="divider"></div>
-
-    <h2>Úkoly</h2>
-    <div class="card" id="tasks"></div>
-
+    <div id="groups"></div>
+    <details id="backlogbox" style="margin-top:8px">
+      <summary><h2 style="margin-bottom:8px">Backlog <span id="backlog-count"></span></h2></summary>
+      <div class="card" id="backlog"></div>
+    </details>
     <details id="donebox" style="margin-top:8px">
-      <summary><h2 style="margin-bottom:8px">Hotové <span id="done-count"></span></h2></summary>
+      <summary><h2 style="margin-bottom:8px">Hotovo <span id="done-count"></span></h2></summary>
       <div class="card" id="done"></div>
       <p style="text-align:right"><button class="danger" id="btn-cleardone">Smazat všechny hotové</button></p>
     </details>
@@ -109,9 +119,24 @@
   </form>
 </div>
 
-<div id="editor" role="dialog" aria-label="Poznámka">
-  <input type="text" id="ed-title" placeholder="Nadpis" aria-label="Nadpis">
-  <textarea id="ed-body" placeholder="Text poznámky…" aria-label="Text poznámky"></textarea>
+<div id="editor" role="dialog" aria-label="Úkol">
+  <h2 id="ed-head" style="margin:4px 0 0">Úkol</h2>
+  <div><label class="cap" for="ed-title">Název</label>
+    <input type="text" id="ed-title" placeholder="Název úkolu…" autocomplete="off"></div>
+  <div class="grid">
+    <div><label class="cap" for="ed-status">Stav</label><select id="ed-status"></select></div>
+    <div><label class="cap" for="ed-project">Projekt</label>
+      <input type="text" id="ed-project" list="projects" placeholder="bez projektu" autocomplete="off"><datalist id="projects"></datalist></div>
+    <div><label class="cap" for="ed-priority">Priorita</label><select id="ed-priority"></select></div>
+  </div>
+  <div><label class="cap" for="ed-desc">Popis</label>
+    <textarea id="ed-desc" placeholder="Volitelný popis…"></textarea></div>
+  <div><label class="cap">Podúkoly</label>
+    <div class="card" id="ed-subs"></div>
+    <form id="ed-subform" autocomplete="off" style="display:flex;gap:8px;margin-top:8px">
+      <input type="text" id="ed-subnew" placeholder="Přidat podúkol…" enterkeyhint="enter" aria-label="Nový podúkol">
+      <button type="submit" aria-label="Přidat podúkol">+</button>
+    </form></div>
   <div class="bar">
     <button id="ed-back">Zpět</button>
     <button class="danger" id="ed-delete">Smazat</button>
@@ -124,29 +149,32 @@
 <script src="https://accounts.google.com/gsi/client" async defer onload="window.__gsiReady && window.__gsiReady()"></script>
 <script>
 "use strict";
+// Úkoly ze společného board.json (složka „IMP sdílené“) – stejný soubor a tvar úkolu jako IMP Master a o-io.
+// Poznámky a skici v souboru zůstávají beze změny. Každá změna: přečíst čerstvý soubor, upravit jen dotčený úkol,
+// ověřit, že ho mezitím nikdo nepřepsal (verze na Disku), zapsat.
 const CFG = window.IMP_CONFIG || {};
-const SCOPE = "https://www.googleapis.com/auth/drive";
-const FOLDER = "IMP Master", TASKS_FILE = "poznamky.txt", NOTES_FILE = "notes.json";
-const TASK_RE = /^\s*\[( |x|X)\]\s*(.*)$/;
+const SCOPE = "https://www.googleapis.com/auth/drive.file";     // jen soubory aplikací tohoto projektu (IMP, o-io)
+const FOLDER = "IMP sdílené", BOARD = "board.json", FORMAT = 1;
+const STATUSES = ["backlog", "todo", "inprogress", "done"];
+const STATUS_LABELS = { backlog: "Backlog", todo: "Todo", inprogress: "Rozpracované", done: "Hotovo" };
+const PRIORITIES = ["high", "medium", "low"];
+const PRIORITY_LABELS = { high: "Vysoká", medium: "Střední", low: "Nízká" };
+const ID_RE = /^[A-Za-z0-9_]{1,64}$/;
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------- stav
-const S = { token: null, exp: 0, folderId: null, ids: {}, notes: [], lines: [], editing: null, busy: false, tokenClient: null, waiters: [] };
+const S = { token: null, exp: 0, folderId: null, ids: {}, tasks: [], projects: [], editing: null, subs: [], busy: false, tokenClient: null, waiters: [] };
 
-function nowIso() {                       // místní čas bez zóny, stejný tvar jako v aplikaci na PC
-  const d = new Date(), p = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-function newId() {
-  const a = new Uint8Array(6); crypto.getRandomValues(a);
-  return Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+function newId() {                         // stejný tvar jako IMP a o-io: čas v base36 + 4 náhodné znaky
+  const abc = "0123456789abcdefghijklmnopqrstuvwxyz", a = new Uint8Array(4); crypto.getRandomValues(a);
+  return Date.now().toString(36) + Array.from(a, b => abc[b % 36]).join("");
 }
 function showBanner(text, info) { const b = $("banner"); b.textContent = text || ""; b.hidden = !text; b.className = "banner" + (info ? " info" : ""); }
 
 // ---------------------------------------------------------------- přihlášení (Google Identity Services)
-function saveToken() { try { sessionStorage.setItem("imp_tok", JSON.stringify({ t: S.token, e: S.exp })); } catch (_) {} }
+function saveToken() { try { sessionStorage.setItem("imp_tok", JSON.stringify({ t: S.token, e: S.exp, s: SCOPE })); } catch (_) {} }
 function loadToken() {
-  try { const o = JSON.parse(sessionStorage.getItem("imp_tok") || "null"); if (o && o.e > Date.now()) { S.token = o.t; S.exp = o.e; } } catch (_) {}
+  try { const o = JSON.parse(sessionStorage.getItem("imp_tok") || "null"); if (o && o.e > Date.now() && o.s === SCOPE) { S.token = o.t; S.exp = o.e; } } catch (_) {}
 }
 function clearToken() { S.token = null; S.exp = 0; try { sessionStorage.removeItem("imp_tok"); } catch (_) {} }
 
@@ -174,6 +202,7 @@ function requestToken(prompt) {
 async function ensureToken() { if (S.token && Date.now() < S.exp) return; await requestToken(""); }
 
 // ---------------------------------------------------------------- Drive
+const API = "https://www.googleapis.com/drive/v3", UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 async function api(url, opts = {}, retry = true) {
   await ensureToken();
   const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + S.token } });
@@ -183,58 +212,57 @@ async function api(url, opts = {}, retry = true) {
 }
 const q = s => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 async function list(query) {
-  const u = "https://www.googleapis.com/drive/v3/files?spaces=drive&pageSize=10&fields=files(id,name)&q=" + encodeURIComponent(query);
+  const u = `${API}/files?spaces=drive&pageSize=10&orderBy=createdTime&fields=files(id,name)&q=` + encodeURIComponent(query);
   return (await (await api(u)).json()).files || [];
 }
 async function folderId() {
   if (S.folderId) return S.folderId;
   const f = await list(`name = '${q(FOLDER)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents`);
-  if (!f.length) throw new Error(`Na Disku není složka „${FOLDER}“. Nejdřív spusť IMP na počítači.`);
+  if (!f.length) throw new Error(`Na Disku není složka „${FOLDER}“. V IMPu zapni Google účty → Sdílení s o-io a synchronizuj.`);
   return (S.folderId = f[0].id);
 }
-async function fileId(name) {
-  if (S.ids[name]) return S.ids[name];
-  const f = await list(`name = '${q(name)}' and '${await folderId()}' in parents and trashed = false`);
-  return f.length ? (S.ids[name] = f[0].id) : null;
+async function boardId() {
+  if (S.ids[BOARD]) return S.ids[BOARD];
+  const f = await list(`name = '${q(BOARD)}' and '${await folderId()}' in parents and trashed = false`);
+  if (!f.length) throw new Error("Ve složce „IMP sdílené“ zatím není board.json – nejdřív synchronizuj IMP.");
+  return (S.ids[BOARD] = f[0].id);
 }
-async function readText(name) {
-  const id = await fileId(name);
-  if (!id) return null;
-  return (await api(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).text();
+async function version(id) { return (await (await api(`${API}/files/${id}?fields=version`)).json()).version; }
+
+async function readBoard() {
+  const id = await boardId();
+  const ver = await version(id);                       // verze před obsahem: nanejvýš starší, nikdy novější
+  const text = await (await api(`${API}/files/${id}?alt=media`)).text();
+  let data;
+  try { data = JSON.parse(text); } catch (_) { throw new Error("board.json na Disku je poškozený – nic neměním."); }
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("board.json na Disku má neznámý tvar – nic neměním.");
+  if (Number(data.version || 1) > FORMAT) throw new Error("board.json má novější formát – aktualizuj IMP Mobile.");
+  if (!Array.isArray(data.tasks)) data.tasks = [];
+  return { id, ver, data };
 }
-async function writeText(name, text, mime) {
-  const id = await fileId(name);
-  if (id) {
-    await api(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, { method: "PATCH", headers: { "Content-Type": mime }, body: text });
-  } else {
-    const b = "imp" + newId(), meta = JSON.stringify({ name, parents: [await folderId()] });
-    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: ${mime}\r\n\r\n${text}\r\n--${b}--`;
-    const r = await api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
-      { method: "POST", headers: { "Content-Type": `multipart/related; boundary=${b}` }, body });
-    S.ids[name] = (await r.json()).id;
+function useBoard(data) {
+  S.tasks = data.tasks.filter(t => t && typeof t === "object" && ID_RE.test(String(t.id || "")));
+  const names = new Set();
+  [...S.tasks, ...(Array.isArray(data.notes) ? data.notes : [])].forEach(x => { const p = String((x && x.project) || "").trim(); if (p) names.add(p); });
+  S.projects = [...names].sort((a, b) => a.localeCompare(b, "cs"));
+}
+async function loadAll() { useBoard((await readBoard()).data); }
+
+// fn(tasks) upraví pole na místě a vrátí true, když se něco změnilo
+async function mutate(fn) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { id, ver, data } = await readBoard();
+    if (!fn(data.tasks)) { useBoard(data); return; }
+    if ((await version(id)) !== ver) continue;         // mezitím zapsal IMP nebo o-io – znovu nad čerstvými daty
+    await api(`${UPLOAD}/files/${id}?uploadType=media`, { method: "PATCH", headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify(data, null, 1) });
+    useBoard(data);
+    return;
   }
+  throw new Error("Soubor se právě mění na jiném zařízení – zkus to za chvíli znovu.");
 }
-
-// ---------------------------------------------------------------- data (každá změna: přečíst čerstvé, upravit, zapsat)
-const parseNotes = text => { try { const d = JSON.parse(text || "{}"); return Array.isArray(d) ? d : (d.notes || []); } catch (_) { return []; } };
-const splitLines = text => (text || "").split(/\r?\n/).filter(l => l.trim() !== "");
-
-async function loadAll() {
-  const [t, n] = await Promise.all([readText(TASKS_FILE), readText(NOTES_FILE)]);
-  S.lines = splitLines(t); S.notes = parseNotes(n);
-}
-async function mutateTasks(fn) {
-  const lines = splitLines(await readText(TASKS_FILE));
-  const out = fn(lines);
-  await writeText(TASKS_FILE, out.length ? out.join("\n") + "\n" : "", "text/plain");
-  S.lines = out;
-}
-async function mutateNotes(fn) {
-  const notes = parseNotes(await readText(NOTES_FILE));
-  const out = fn(notes);
-  await writeText(NOTES_FILE, JSON.stringify({ notes: out }, null, 1), "application/json");
-  S.notes = out;
-}
+const now = () => Date.now();
+const findTask = (tasks, id) => tasks.find(t => t && t.id === id);
 
 // ---------------------------------------------------------------- vykreslení
 function el(tag, props = {}, ...kids) {
@@ -242,40 +270,49 @@ function el(tag, props = {}, ...kids) {
   for (const [k, v] of Object.entries(props)) k === "class" ? (e.className = v) : k.startsWith("on") ? e.addEventListener(k.slice(2), v) : e.setAttribute(k, v);
   kids.forEach(k => e.append(k)); return e;
 }
+const PRI_ORDER = { high: 0, medium: 1, low: 2 };
 function render() {
-  const notes = S.notes.filter(n => !n.deleted).sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
-  const box = $("notes"); box.replaceChildren();
-  if (!notes.length) box.append(el("div", { class: "empty" }, "Žádné poznámky."));
-  notes.forEach(n => box.append(el("div", { class: "row note", onclick: () => openEditor(n.id) }, el("div", { class: "label" }, n.title || "(bez nadpisu)"))));
-
-  const tasks = S.lines.map(raw => { const m = TASK_RE.exec(raw); return m ? { raw, text: m[2].trim(), done: m[1] !== " " } : null; }).filter(Boolean);
-  const open = tasks.filter(t => !t.done), done = tasks.filter(t => t.done);
-  const tbox = $("tasks"); tbox.replaceChildren();
-  if (!open.length) tbox.append(el("div", { class: "empty" }, "Žádné úkoly. Podezřele klidné."));
-  open.forEach(t => tbox.append(taskRow(t)));
-  const dbox = $("done"); dbox.replaceChildren();
-  if (!done.length) dbox.append(el("div", { class: "empty" }, "Nic."));
-  done.forEach(t => dbox.append(taskRow(t)));
-  $("done-count").textContent = done.length ? `(${done.length})` : "";
+  const by = s => S.tasks.filter(t => (STATUSES.includes(t.status) ? t.status : "todo") === s);
+  const sortP = arr => arr.slice().sort((a, b) => (PRI_ORDER[a.priority] ?? 1) - (PRI_ORDER[b.priority] ?? 1));
+  const groups = $("groups"); groups.replaceChildren();
+  [["inprogress", "Rozpracované"], ["todo", "Todo"]].forEach(([s, label]) => {
+    const items = sortP(by(s));
+    if (s === "inprogress" && !items.length) return;
+    const card = el("div", { class: "card" });
+    if (!items.length) card.append(el("div", { class: "empty" }, "Žádné úkoly. Podezřele klidné."));
+    items.forEach(t => card.append(taskRow(t)));
+    groups.append(el("h2", {}, label + (items.length ? ` (${items.length})` : "")), card);
+  });
+  fill("backlog", sortP(by("backlog")), "backlog-count");
+  fill("done", by("done"), "done-count");
+}
+function fill(boxId, items, countId) {
+  const box = $(boxId); box.replaceChildren();
+  if (!items.length) box.append(el("div", { class: "empty" }, "Nic."));
+  items.forEach(t => box.append(taskRow(t)));
+  $(countId).textContent = items.length ? `(${items.length})` : "";
 }
 function taskRow(t) {
-  const cb = el("input", { type: "checkbox", "aria-label": t.text, onchange: () => act(() => mutateTasks(lines => replaceLine(lines, t.raw, `[${t.done ? " " : "x"}] ${t.text}`))) });
-  cb.checked = t.done;
-  return el("div", { class: "row" + (t.done ? " done" : "") }, cb, el("div", { class: "label" }, t.text),
-    el("button", { class: "icon danger", "aria-label": "Smazat", onclick: () => confirm(`Smazat úkol „${t.text}“?`) && act(() => mutateTasks(lines => replaceLine(lines, t.raw, null))) }, "✕"));
-}
-function replaceLine(lines, raw, repl) {
-  const i = lines.indexOf(raw), out = lines.slice();
-  if (i < 0) return out;
-  repl === null ? out.splice(i, 1) : (out[i] = repl);
-  return out;
+  const done = t.status === "done";
+  const cb = el("input", { type: "checkbox", "aria-label": String(t.title || ""), onclick: e => e.stopPropagation(),
+    onchange: () => act(() => mutate(tasks => { const x = findTask(tasks, t.id); if (!x) return false;
+      x.status = x.status === "done" ? "todo" : "done"; x.updated = now(); return true; })) });
+  cb.checked = done;
+  const meta = el("span", { class: "meta" });
+  if (t.priority === "high" || t.priority === "low") meta.append(el("span", { class: "badge " + t.priority }, PRIORITY_LABELS[t.priority]));
+  if (t.project) meta.append(el("span", { class: "badge proj" }, String(t.project)));
+  const subs = Array.isArray(t.subtasks) ? t.subtasks.filter(s => s && typeof s === "object") : [];
+  if (subs.length) meta.append(el("span", { class: "badge" }, `${subs.filter(s => s.done).length}/${subs.length}`));
+  const label = el("div", { class: "label" }, String(t.title || "(bez názvu)"));
+  if (meta.childNodes.length) label.append(meta);
+  return el("div", { class: "row task" + (done ? " done" : ""), onclick: () => openEditor(t.id) }, cb, label);
 }
 
 // ---------------------------------------------------------------- akce
 async function act(fn) {
   if (S.busy) return;
   S.busy = true; showBanner("");
-  try { render(); await fn(); render(); stamp(); }
+  try { await fn(); render(); stamp(); }
   catch (e) { showBanner(e.message || String(e)); try { await loadAll(); render(); } catch (_) {} }
   finally { S.busy = false; }
 }
@@ -288,31 +325,66 @@ async function refresh(quiet) {
   finally { S.busy = false; }
 }
 
+// ---------------------------------------------------------------- editor úkolu (stejná pole jako IMP)
+STATUSES.forEach(s => $("ed-status").append(el("option", { value: s }, STATUS_LABELS[s])));
+PRIORITIES.forEach(p => $("ed-priority").append(el("option", { value: p }, PRIORITY_LABELS[p])));
+
 function openEditor(id) {
-  const n = id ? S.notes.find(x => x.id === id) : null;
-  S.editing = n ? n.id : "";
-  $("ed-title").value = n ? n.title : ""; $("ed-body").value = n ? n.body : "";
-  $("ed-delete").hidden = !n; $("editor").classList.add("open");
-  (n ? $("ed-body") : $("ed-title")).focus();
+  const t = id ? findTask(S.tasks, id) : null;
+  S.editing = t ? t.id : "";
+  $("ed-head").textContent = t ? "Upravit úkol" : "Nový úkol";
+  $("ed-title").value = t ? String(t.title || "") : "";
+  $("ed-status").value = t && STATUSES.includes(t.status) ? t.status : "todo";
+  $("ed-priority").value = t && PRIORITIES.includes(t.priority) ? t.priority : "medium";
+  $("ed-project").value = t ? String(t.project || "") : "";
+  $("ed-desc").value = t ? String(t.description || "") : "";
+  S.subs = (t && Array.isArray(t.subtasks) ? t.subtasks : []).filter(s => s && typeof s === "object")
+    .map(s => ({ title: String(s.title || ""), done: !!s.done }));
+  $("projects").replaceChildren(...S.projects.map(p => el("option", { value: p })));
+  renderSubs();
+  $("ed-delete").hidden = !t; $("editor").classList.add("open");
+  if (!t) $("ed-title").focus();
+}
+function renderSubs() {
+  const box = $("ed-subs"); box.replaceChildren();
+  if (!S.subs.length) box.append(el("div", { class: "empty" }, "Žádné podúkoly."));
+  S.subs.forEach((s, i) => {
+    const cb = el("input", { type: "checkbox", "aria-label": s.title, onchange: () => { S.subs[i].done = cb.checked; renderSubs(); } });
+    cb.checked = s.done;
+    box.append(el("div", { class: "row" + (s.done ? " done" : "") }, cb, el("div", { class: "label" }, s.title),
+      el("button", { class: "icon danger", type: "button", "aria-label": "Odebrat podúkol", onclick: () => { S.subs.splice(i, 1); renderSubs(); } }, "✕")));
+  });
 }
 function closeEditor() { $("editor").classList.remove("open"); S.editing = null; }
 async function saveEditor() {
   if (S.editing === null) return;
-  const id = S.editing, title = $("ed-title").value.trim(), body = $("ed-body").value;
+  const pending = $("ed-subnew").value.trim();
+  if (pending) { S.subs.push({ title: pending, done: false }); $("ed-subnew").value = ""; }
+  const id = S.editing, old = id && findTask(S.tasks, id);
+  const title = $("ed-title").value.trim() || (old ? String(old.title || "") : "");
+  if (!title) { closeEditor(); return; }                 // prázdný nový úkol se neuloží
+  const fields = { title, status: $("ed-status").value, priority: $("ed-priority").value, project: $("ed-project").value.trim(),
+    description: $("ed-desc").value, subtasks: S.subs.map(s => ({ title: s.title, done: s.done })) };
   closeEditor();
-  if (!title && !body.trim()) return;
-  const t = title || body.trim().split("\n")[0].slice(0, 80);
-  await act(() => mutateNotes(list => {
-    const n = id && list.find(x => x.id === id);
-    if (n) { if (n.title === t && n.body === body) return list; Object.assign(n, { title: t, body, updated: nowIso(), deleted: false }); return list; }
-    return list.concat({ id: newId(), title: t, body, updated: nowIso(), deleted: false });
+  await act(() => mutate(tasks => {
+    const x = id && findTask(tasks, id);
+    if (x) {
+      const changed = Object.keys(fields).some(k => JSON.stringify(x[k] ?? (k === "subtasks" ? [] : "")) !== JSON.stringify(fields[k]));
+      if (!changed) return false;
+      Object.assign(x, fields, { updated: now() });
+      return true;
+    }
+    // nový úkol (nebo úkol mezitím smazaný jinde – úprava má přednost před smazáním, stejně jako v IMPu)
+    tasks.unshift({ id: id || newId(), ...fields, due: "", updated: now() });
+    return true;
   }));
 }
-async function deleteNote() {
+async function deleteTask() {
   const id = S.editing;
-  if (!id || !confirm("Smazat tuto poznámku?")) return;
+  const t = id && findTask(S.tasks, id);
+  if (!t || !confirm(`Smazat úkol „${t.title}“?`)) return;
   closeEditor();
-  await act(() => mutateNotes(list => { const n = list.find(x => x.id === id); if (n) Object.assign(n, { deleted: true, updated: nowIso() }); return list; }));
+  await act(() => mutate(tasks => { const i = tasks.findIndex(x => x && x.id === id); if (i < 0) return false; tasks.splice(i, 1); return true; }));
 }
 
 // ---------------------------------------------------------------- start
@@ -324,24 +396,36 @@ async function start() {
   if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("VLOZ")) { showLogin("Chybí ID klienta Google v souboru config.js (viz README)."); $("btn-login").disabled = true; return; }
   $("login").hidden = true; $("app").hidden = false; $("addbar").hidden = false;
   $("btn-refresh").hidden = $("btn-logout").hidden = false;
-  try { await ensureToken(); await loadAll(); render(); stamp(); }
-  catch (e) { showLogin(/zrušeno|popup|access_denied|interaction|immediate/i.test(String(e.message)) || !S.token ? "" : e.message); }
+  try { await ensureToken(); }
+  catch (e) { showLogin(""); return; }
+  try { await loadAll(); render(); stamp(); }
+  catch (e) { render(); showBanner(e.message || String(e)); }
 }
 $("btn-login").onclick = async () => {
   try { await requestToken("select_account"); await start(); } catch (e) { showBanner("Přihlášení se nezdařilo: " + (e.message || e)); }
 };
 $("btn-logout").onclick = () => { if (S.token && window.google) google.accounts.oauth2.revoke(S.token, () => {}); clearToken(); S.ids = {}; S.folderId = null; showLogin(); };
 $("btn-refresh").onclick = () => refresh(false);
-$("btn-newnote").onclick = () => openEditor("");
-$("btn-cleardone").onclick = () => confirm("Smazat všechny hotové úkoly?") && act(() => mutateTasks(lines => lines.filter(l => { const m = TASK_RE.exec(l); return !(m && m[1] !== " "); })));
+$("btn-cleardone").onclick = () => confirm("Smazat všechny hotové úkoly?") && act(() => mutate(tasks => {
+  const before = tasks.length;
+  for (let i = tasks.length - 1; i >= 0; i--) if (tasks[i] && tasks[i].status === "done") tasks.splice(i, 1);
+  return tasks.length !== before;
+}));
 $("addform").onsubmit = ev => {
   ev.preventDefault();
-  const text = $("addtext").value.trim().replace(/^\[( |x|X)\]\s*/, "");
-  if (!text) return;
+  const title = $("addtext").value.trim();
+  if (!title) return;
   $("addtext").value = "";
-  act(() => mutateTasks(lines => lines.concat(`[ ] ${text}`)));
+  act(() => mutate(tasks => { tasks.unshift({ id: newId(), title, status: "todo", project: "", priority: "medium", description: "",
+    subtasks: [], due: "", updated: now() }); return true; }));
 };
-$("ed-save").onclick = saveEditor; $("ed-back").onclick = saveEditor; $("ed-delete").onclick = deleteNote;
+$("ed-subform").onsubmit = ev => {
+  ev.preventDefault();
+  const v = $("ed-subnew").value.trim();
+  if (!v) return;
+  S.subs.push({ title: v, done: false }); $("ed-subnew").value = ""; renderSubs();
+};
+$("ed-save").onclick = saveEditor; $("ed-back").onclick = saveEditor; $("ed-delete").onclick = deleteTask;
 document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing !== null) saveEditor(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S.token && S.editing === null) refresh(true); });
 setInterval(() => { if (!document.hidden && S.token && S.editing === null) refresh(true); }, 60000);
